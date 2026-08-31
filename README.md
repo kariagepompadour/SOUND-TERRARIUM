@@ -8,6 +8,12 @@ A tiny runner lives inside it.**
 
 **A tiny living world that simulates the present moment of your chosen city.**
 
+## Try SOUND TERRARIUM
+
+▶ **[TRY THE WEB VERSION](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/)**
+
+🎬 **[WATCH THE DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
+
 SOUND TERRARIUM is a small audio-reactive world for the **M5Stack
 Cardputer ADV**.
 
