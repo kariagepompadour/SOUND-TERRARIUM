@@ -6,8 +6,15 @@
 Time and weather create the sky.\
 A tiny runner lives inside it.**
 
+**A tiny living world that simulates the present moment of your chosen city.**
+
 SOUND TERRARIUM is a small audio-reactive world for the **M5Stack
 Cardputer ADV**.
+
+Set a city anywhere in the world, and SOUND TERRARIUM brings its
+present moment into the tiny screen — local time, current weather,
+temperature and humidity, sunrise and sunset, moonrise and moonset,
+lunar phase, and the changing light from day through twilight into night.
 
 The built-in microphone listens to the sound around the device and
 analyzes it in real time. An 8-band graphic equalizer appears at the
@@ -355,7 +362,8 @@ The EQ is not decoration --- it creates the terrain.
 
 The terrain is not random --- it comes from sound.
 
-The sky is not a looping animation --- it follows time and weather.
+The sky is not a looping animation --- it reflects the present moment
+of the selected city.
 
 The tilt is not a meter --- it changes the world the runner lives in.
 
@@ -383,3 +391,8 @@ self-contained world inside the Cardputer --- a world whose landscape is
 continuously shaped by sound.
 
 *inspired by retro arcade*
+
+------------------------------------------------------------------------
+
+**The noise of the city is our energy.\
+Run toward tomorrow. Run! Run! Keep running!**
