@@ -14,6 +14,12 @@ A tiny runner lives inside it.**
 
 🎬 **[WATCH THE DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
 
+**MAKE YOUR OWN SOUND TERRARIUM.**  
+**MODIFY IT. REMIX IT. SHARE IT.**  
+If I love your idea, it might even become part of the original SOUND TERRARIUM.
+
+SOUND TERRARIUM is open source under the **MIT License**.
+
 <img width="540" height="304" alt="IMG_6223_1951" src="https://github.com/user-attachments/assets/1133b926-5f54-47cf-82cd-0ba96b2522a5" />
 
 SOUND TERRARIUM is a small audio-reactive world for the **M5Stack
