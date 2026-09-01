@@ -14,6 +14,8 @@ A tiny runner lives inside it.**
 
 🎬 **[WATCH THE DEMO](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/SOUND_TERRARIUM_demo.mp4)**
 
+<img width="800" height="450" alt="IMG_6223_2-ezgif com-video-to-gif-converter" src="https://github.com/user-attachments/assets/5b8c37b5-0374-4191-99b3-62e835fd8a00" />
+
 SOUND TERRARIUM is a small audio-reactive world for the **M5Stack
 Cardputer ADV**.
 
