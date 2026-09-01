@@ -402,5 +402,31 @@ continuously shaped by sound.
 
 ------------------------------------------------------------------------
 
+## License, modifications and sharing
+
+SOUND TERRARIUM is released under the **MIT License**. You are welcome to use it,
+modify it, experiment with it, and redistribute your own versions under the
+terms of the license.
+
+If you create a modified version, I'd appreciate it if you could clearly say
+that it is based on SOUND TERRARIUM, describe what you changed, and share your
+ideas with the community. This is a request rather than an additional condition
+of the MIT License.
+
+My hope is that improvements and new ideas can be seen by others, adapted, and
+developed further, so that SOUND TERRARIUM can continue to evolve through the
+creativity of everyone who plays with it.
+
+If you publish a modification or improvement under terms that allow it to be
+reused, I may incorporate ideas or code from it into the original SOUND
+TERRARIUM. When I do, I will give appropriate credit to the contributor where
+applicable.
+
+If you make something interesting, **I'd love to see it!**
+
+See [LICENSE](LICENSE) for the full license text.
+
+------------------------------------------------------------------------
+
 **The noise of the city is our energy.\
 Run toward tomorrow. Run! Run! Keep running!**
