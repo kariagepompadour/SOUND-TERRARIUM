@@ -7,6 +7,8 @@
 // v98: real moonrise/moonset, low on-screen celestial arcs, centered clock block, T toggles date/time/weather.
 // v102: SUN rise/set moved upper-left, MOON rise/set upper-right; date/weekday same size but bold; day/night ground both Choplifter sand #E9B86A.
 // v104: renamed SOUND TERRARIUM / inspired by retro arcade; Claude review hardening: rate-limited NTP/Wi-Fi retries, bounded I2S read, safer scheduled UFO window, reduced per-frame String churn.
+// v108am: tide display layout = vertical HIGH/LOW, with TIDE UP/DN to the right of LOW.
+// v108ak: add Open-Meteo Marine tide HIGH/LOW display (I), plus MSL pressure and precipitation probability (T).
 // v108x: night stars keep the existing positions/count, add sparse blue/red/yellow accents, and five phase-staggered twinkling stars.\n// v108w: central line spacing relaxed by 1px per gap: DATE y=35, TIME y=47, WEATHER y=72.\n// v108v: WEATHER now uses the same FreeSansBold9pt 7/9 scale as DATE/weekday.\n// v108u: DATE/weekday 7pt, TIME 16pt, WEATHER 6pt; compacted spacing; LOCATION moved to bottom-left.\n// v108t: compact central clock stack after font reduction; TIME y=47, WEATHER y=73.\n// v108m: Cloud brightness now follows the same continuous solar-elevation model as the sky.
 // v108l: T/I display scopes made fully independent; per-frame LOCATION String allocation removed.
 // v108k: review fixes: Sun/Moon ephemeris handled independently; Wi-Fi setup handlers are registered only once.
@@ -329,7 +331,17 @@ struct WeatherState {
   uint32_t updatedMs = 0;
   float temperatureC = NAN;
   int humidityPct = -1;
+  float pressureMslHpa = NAN;
+  int precipitationProbabilityPct = -1;
 } weather;
+
+struct TideState {
+  bool valid = false;
+  bool rising = false;
+  time_t nextHighEpoch = 0;
+  time_t nextLowEpoch = 0;
+  uint32_t updatedMs = 0;
+} tide;
 
 
 Preferences prefs;
@@ -343,7 +355,7 @@ NetStage netStage=NET_NO_WIFI;
 
 // /save must return immediately. Connection testing and location/weather refresh
 // are deferred to loop() so the HTTP handler itself never blocks for tens of seconds.
-enum PendingSetupStage { PSET_IDLE, PSET_START, PSET_WAIT_WIFI, PSET_NTP, PSET_LOCATION, PSET_WEATHER, PSET_EPHEMERIS, PSET_DONE };
+enum PendingSetupStage { PSET_IDLE, PSET_START, PSET_WAIT_WIFI, PSET_NTP, PSET_LOCATION, PSET_WEATHER, PSET_TIDE, PSET_EPHEMERIS, PSET_DONE };
 static PendingSetupStage pendingSetupStage=PSET_IDLE;
 static String pendingSetupSsid;
 static String pendingSetupPass;
@@ -414,7 +426,11 @@ static bool lunarScheduleValid = false;
 // T toggles only the date/time/weather block. Networking, NTP, weather and
 // celestial calculations continue normally while the text is hidden.
 static bool showClockInfo = true;
-static bool showAuxInfo = false; // I: ephemeris/location/IMU/AP; hidden by default
+static bool showAuxInfo = false; // I: ephemeris/location/tide/AP; hidden by default
+
+static uint32_t lastTideAttemptMs = 0;
+static constexpr uint32_t TIDE_REFRESH_MS = 6UL*60UL*60UL*1000UL;
+static constexpr uint32_t TIDE_RETRY_MS = 30UL*60UL*1000UL;
 
 // ---------------- Audio ----------------
 // IMPORTANT: this deliberately bypasses M5Cardputer.Mic.
@@ -658,6 +674,13 @@ void loadSavedWeather(){
   weather.online=false;
   weather.temperatureC = prefs.getFloat("tempc", NAN);
   weather.humidityPct = prefs.getInt("humid", -1);
+  weather.pressureMslHpa = prefs.getFloat("press", NAN);
+  weather.precipitationProbabilityPct = prefs.getInt("pop", -1);
+
+  tide.valid = prefs.getBool("tidevalid", false);
+  tide.rising = prefs.getBool("tiderise", false);
+  tide.nextHighEpoch = (time_t)prefs.getLong64("tidehigh", 0);
+  tide.nextLowEpoch = (time_t)prefs.getLong64("tidelow", 0);
 
   locationLatitude = prefs.getFloat("loclat", DEFAULT_LATITUDE);
   locationLongitude = prefs.getFloat("loclon", DEFAULT_LONGITUDE);
@@ -846,8 +869,8 @@ void fetchWeather(){
     String("http://api.open-meteo.com/v1/forecast?latitude=")
     + String(locationLatitude,4)
     + "&longitude=" + String(locationLongitude,4)
-    + "&current=weather_code,cloud_cover,temperature_2m,relative_humidity_2m"
-    + "&forecast_days=1"
+    + "&current=weather_code,cloud_cover,temperature_2m,relative_humidity_2m,pressure_msl"
+    + "&hourly=precipitation_probability&forecast_hours=1"
     + "&timezone=auto";
 
   http.setConnectTimeout(8000);
@@ -888,6 +911,10 @@ void fetchWeather(){
   weather.cloud=clampi(weather.cloud,0,100);
   if(!current["temperature_2m"].isNull()) weather.temperatureC=current["temperature_2m"].as<float>();
   if(!current["relative_humidity_2m"].isNull()) weather.humidityPct=clampi(current["relative_humidity_2m"].as<int>(),0,100);
+  if(!current["pressure_msl"].isNull()) weather.pressureMslHpa=current["pressure_msl"].as<float>();
+  JsonArray popArr=doc["hourly"]["precipitation_probability"].as<JsonArray>();
+  if(!popArr.isNull() && popArr.size()>0 && !popArr[0].isNull())
+    weather.precipitationProbabilityPct=clampi(popArr[0].as<int>(),0,100);
   weather.mode=modeFromWMO(weather.code);
   weather.online=true;
   weather.updatedMs=millis();
@@ -903,9 +930,105 @@ void fetchWeather(){
   prefs.putUChar("wxmode",(uint8_t)weather.mode);
   if(isfinite(weather.temperatureC)) prefs.putFloat("tempc",weather.temperatureC);
   if(weather.humidityPct>=0) prefs.putInt("humid",weather.humidityPct);
+  if(isfinite(weather.pressureMslHpa)) prefs.putFloat("press",weather.pressureMslHpa);
+  if(weather.precipitationProbabilityPct>=0) prefs.putInt("pop",weather.precipitationProbabilityPct);
 
   weatherOK=true;
   weatherDiag="WEATHER OK";
+}
+
+static bool fetchTides(){
+  if(WiFi.status()!=WL_CONNECTED) return false;
+
+  const uint32_t nowMs=millis();
+  if(tide.valid && tide.updatedMs!=0 && (uint32_t)(nowMs-tide.updatedMs)<TIDE_REFRESH_MS) return true;
+  if(lastTideAttemptMs!=0 && (uint32_t)(nowMs-lastTideAttemptMs)<TIDE_RETRY_MS) return tide.valid;
+  lastTideAttemptMs=nowMs;
+
+  HTTPClient http;
+  String url =
+    String("http://marine-api.open-meteo.com/v1/marine?latitude=")
+    + String(locationLatitude,4)
+    + "&longitude=" + String(locationLongitude,4)
+    + "&hourly=sea_level_height_msl"
+    + "&past_hours=2&forecast_hours=36"
+    + "&timeformat=unixtime&timezone=GMT&cell_selection=sea";
+
+  http.setConnectTimeout(8000);
+  http.setTimeout(8000);
+  if(!http.begin(url)) return false;
+  int code=http.GET();
+  if(code!=HTTP_CODE_OK){ http.end(); return false; }
+  String body=http.getString();
+  http.end();
+
+  JsonDocument doc;
+  if(deserializeJson(doc,body)) return false;
+  JsonArray times=doc["hourly"]["time"].as<JsonArray>();
+  JsonArray levels=doc["hourly"]["sea_level_height_msl"].as<JsonArray>();
+  const int n=(int)min(times.size(),levels.size());
+  if(n<5) return false;
+
+  const time_t now=safeEpoch();
+  time_t nextHigh=0,nextLow=0;
+  bool directionKnown=false;
+  bool rising=false;
+
+  // Determine the local trend around the present time.
+  for(int i=0;i<n-1;i++){
+    if(times[i].isNull() || times[i+1].isNull() || levels[i].isNull() || levels[i+1].isNull()) continue;
+    time_t t0=(time_t)times[i].as<int64_t>();
+    time_t t1=(time_t)times[i+1].as<int64_t>();
+    if(now>=t0 && now<=t1){
+      rising=levels[i+1].as<float>() >= levels[i].as<float>();
+      directionKnown=true;
+      break;
+    }
+  }
+
+  // Find extrema. A 3-point parabolic correction improves the time estimate
+  // beyond the raw one-hour grid without inventing any additional tide model.
+  for(int i=1;i<n-1;i++){
+    if(times[i-1].isNull() || times[i].isNull() || times[i+1].isNull() ||
+       levels[i-1].isNull() || levels[i].isNull() || levels[i+1].isNull()) continue;
+    const float y0=levels[i-1].as<float>();
+    const float y1=levels[i].as<float>();
+    const float y2=levels[i+1].as<float>();
+    const bool isHigh=(y1>y0 && y1>=y2);
+    const bool isLow =(y1<y0 && y1<=y2);
+    if(!isHigh && !isLow) continue;
+
+    float frac=0.0f;
+    const float den=y0-2.0f*y1+y2;
+    if(fabsf(den)>1e-6f){
+      frac=0.5f*(y0-y2)/den;
+      frac=clampf(frac,-1.0f,1.0f);
+    }
+    time_t te=(time_t)times[i].as<int64_t>() + (time_t)lroundf(frac*3600.0f);
+    if(te<=now) continue;
+    if(isHigh && nextHigh==0) nextHigh=te;
+    if(isLow  && nextLow==0)  nextLow=te;
+    if(nextHigh!=0 && nextLow!=0) break;
+  }
+
+  if(nextHigh==0 || nextLow==0) return false;
+  tide.valid=true;
+  tide.rising=directionKnown ? rising : (nextHigh<nextLow);
+  tide.nextHighEpoch=nextHigh;
+  tide.nextLowEpoch=nextLow;
+  tide.updatedMs=millis();
+  lastTideAttemptMs=0;
+
+  prefs.putBool("tidevalid",true);
+  prefs.putBool("tiderise",tide.rising);
+  prefs.putLong64("tidehigh",(int64_t)tide.nextHighEpoch);
+  prefs.putLong64("tidelow",(int64_t)tide.nextLowEpoch);
+  return true;
+}
+
+static void serviceTides(){
+  if(WiFi.status()!=WL_CONNECTED) return;
+  fetchTides();
 }
 
 // ---------------- Bruce 1.16.1 ADV microphone path ----------------
@@ -2556,11 +2679,42 @@ void drawClockInfoOverlay(){
     char locLabel[33];
     snprintf(locLabel,sizeof(locLabel),"%.32s",locationName.c_str());
     canvas.setTextDatum(bottom_left);
+    if(tide.valid){
+      auto fmtTideTime=[](time_t epoch, char *dst, size_t n){
+        time_t localEpoch=epoch + localUtcOffsetSeconds;
+        struct tm tmv;
+        gmtime_r(&localEpoch,&tmv);
+        snprintf(dst,n,"%02d:%02d",tmv.tm_hour,tmv.tm_min);
+      };
+      char hi[8],lo[8],highb[20],lowb[20],trendb[12];
+      fmtTideTime(tide.nextHighEpoch,hi,sizeof(hi));
+      fmtTideTime(tide.nextLowEpoch,lo,sizeof(lo));
+      snprintf(highb,sizeof(highb),"HIGH %s",hi);
+      snprintf(lowb,sizeof(lowb),"LOW  %s",lo);
+      snprintf(trendb,sizeof(trendb),"TIDE %s",tide.rising?"UP":"DN");
+      canvas.drawString(highb,3,H-22);
+      canvas.drawString(lowb,3,H-12);
+      canvas.drawString(trendb,72,H-12);
+    }else{
+      canvas.drawString("HIGH --:--",3,H-22);
+      canvas.drawString("LOW  --:--",3,H-12);
+      canvas.drawString("TIDE --",72,H-12);
+    }
     canvas.drawString(locLabel,3,H-2);
+
+    // Detailed weather information belongs to I (auxiliary information).
+    char auxPress[20],auxPop[16];
+    if(isfinite(weather.pressureMslHpa)) snprintf(auxPress,sizeof(auxPress),"PRES %.0fhPa",weather.pressureMslHpa);
+    else snprintf(auxPress,sizeof(auxPress),"PRES ----hPa");
+    if(weather.precipitationProbabilityPct>=0) snprintf(auxPop,sizeof(auxPop),"RAIN %d%%",weather.precipitationProbabilityPct);
+    else snprintf(auxPop,sizeof(auxPop),"RAIN --%%");
+    canvas.setTextDatum(top_left);
+    canvas.drawString(auxPress,174,22);
+    canvas.drawString(auxPop,174,32);
   }
 
   if(showClockInfo){
-    char tb[16],db[24],tempb[20],humb[16];
+    char tb[16],db[24],tempb[20],humb[16],pressb[20],popb[16];
     static const char* WDAYS[7]={"SUN","MON","TUE","WED","THU","FRI","SAT"};
     strftime(tb,sizeof(tb),"%H:%M",&t);
     snprintf(db,sizeof(db),"%04d.%02d.%02d %s",
@@ -2570,6 +2724,10 @@ void drawClockInfoOverlay(){
     else snprintf(tempb,sizeof(tempb),"TEMP --.-C");
     if(weather.humidityPct>=0) snprintf(humb,sizeof(humb),"HUM  %d%%",weather.humidityPct);
     else snprintf(humb,sizeof(humb),"HUM  --%%");
+    if(isfinite(weather.pressureMslHpa)) snprintf(pressb,sizeof(pressb),"PRES %.0fhPa",weather.pressureMslHpa);
+    else snprintf(pressb,sizeof(pressb),"PRES ----hPa");
+    if(weather.precipitationProbabilityPct>=0) snprintf(popb,sizeof(popb),"RAIN %d%%",weather.precipitationProbabilityPct);
+    else snprintf(popb,sizeof(popb),"RAIN --%%");
 
     // v108: right = current atmosphere.
     canvas.setFont(&fonts::Font0);
@@ -2924,8 +3082,17 @@ bool setLocationFromCity(const String &city){
   weather.cloud=35;
   weather.temperatureC=NAN;
   weather.humidityPct=-1;
+  weather.pressureMslHpa=NAN;
+  weather.precipitationProbabilityPct=-1;
   weather.online=false;
   weatherDiag="UPDATING...";
+
+  tide.valid=false;
+  tide.nextHighEpoch=0;
+  tide.nextLowEpoch=0;
+  tide.updatedMs=0;
+  lastTideAttemptMs=0;
+  prefs.putBool("tidevalid",false);
 
   return true;
 }
@@ -3315,6 +3482,12 @@ static void servicePendingWiFiSetup(){
 
   if(pendingSetupStage==PSET_WEATHER){
     fetchWeather();
+    pendingSetupStage=PSET_TIDE;
+    return;
+  }
+
+  if(pendingSetupStage==PSET_TIDE){
+    fetchTides();
     pendingSetupStage=PSET_EPHEMERIS;
     return;
   }
@@ -3350,7 +3523,7 @@ static void servicePendingWiFiSetup(){
 void setup(){
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[BOOT] SOUND TERRARIUM v108aj UFO rescue safe-drop hold");
+  Serial.println("\n[BOOT] SOUND TERRARIUM v108am tide vertical layout");
   delay(100);
 
   // Initialize only the LCD; do not globally initialize M5Unified/Cardputer.
@@ -3394,6 +3567,7 @@ void setup(){
   if(wifiOK){
     tryNTP();
     fetchWeather();
+    fetchTides();
     fetchDailyEphemeris();
   }
 
@@ -3488,6 +3662,7 @@ void loop(){
 
   // Weather refresh is deliberately sparse.
   if(wifiOK) fetchWeather();
+  serviceTides();
 
   // Sun/Moon rise-set is daily data. After local midnight, fetch once;
   // if unavailable, retry hourly until today's complete set succeeds.

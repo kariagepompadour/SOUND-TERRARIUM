@@ -27,8 +27,9 @@ Cardputer ADV**.
 
 Set a city anywhere in the world, and SOUND TERRARIUM brings its
 present moment into the tiny screen — local time, current weather,
-temperature and humidity, sunrise and sunset, moonrise and moonset,
-lunar phase, and the changing light from day through twilight into night.
+temperature and humidity, atmospheric pressure, precipitation probability,
+sunrise and sunset, moonrise and moonset, tide information, lunar phase,
+and the changing light from day through twilight into night.
 
 The built-in microphone listens to the sound around the device and
 analyzes it in real time. An 8-band graphic equalizer appears at the
@@ -39,7 +40,7 @@ on the landscape created by sound.
 
 At the same time, the sky is connected to the real world. When Wi-Fi is
 available, SOUND TERRARIUM uses current time and Open-Meteo data to
-reflect weather, sunrise, sunset, moonrise, moonset, and lunar phase.
+reflect weather, sunrise, sunset, moonrise, moonset, lunar phase, atmospheric pressure, precipitation probability, and tide information.
 
 In short:
 
@@ -99,28 +100,32 @@ When an Internet connection is available, SOUND TERRARIUM uses
 -   Local date and time
 -   Current weather
 -   Current temperature and relative humidity
+-   Mean sea-level pressure
+-   Precipitation probability
 -   Cloud cover
 -   Sunrise and sunset
 -   Moonrise and moonset
+-   High tide / low tide times and current tide direction
 -   Lunar phase
 -   Day / night / dawn / dusk changes
 -   Location-aware timezone and local clock
 -   Daytime Moon visibility that becomes paler as daylight increases
 
-The current weather panel also shows **TEMP** (temperature in °C) and **HUM**
-(relative humidity in %). TEMP and HUM remain part of the normal display.
+The normal weather panel shows **TEMP** (temperature in °C) and **HUM**
+(relative humidity in %). These remain part of the standard **T** display.
 
-Daily **SUN/MOON rise/set schedules**, the saved **LOCATION**, and the current
-**AP / Wi-Fi status** are treated as auxiliary information. They are hidden by
-default to keep the 240 × 135 world unobstructed, and can be shown or hidden
-together with the **I (Information)** key. **I is independent of T**, so
-auxiliary information can remain visible even when the normal
-date/clock/weather overlay is hidden.
+More detailed environmental information is treated as auxiliary data:
+**PRES** (mean sea-level pressure), **RAIN** (precipitation probability),
+daily **SUN/MOON rise/set schedules**, **HIGH/LOW tide times**, current
+**TIDE UP / TIDE DN** direction, the saved **LOCATION**, and the current
+**AP / Wi-Fi status**. These are hidden by default to keep the 240 × 135
+world unobstructed and can be shown or hidden together with the
+**I (Information)** key. **I is independent of T**, so auxiliary information
+can remain visible even when the normal date/clock/weather overlay is hidden.
 
 The IMU still controls world tilt and runner movement, but its numeric
 left/right and front/back angle diagnostics are no longer drawn on the normal
-scene. When auxiliary information is shown, **LOCATION is displayed at the
-bottom-left** of the scene; AP / Wi-Fi status remains at the bottom-right.
+scene. When auxiliary information is shown, **HIGH** and **LOW** tide times are stacked near the bottom-left, the current **TIDE UP / TIDE DN** state appears beside the LOW line, and **LOCATION** is displayed below them. AP / Wi-Fi status remains at the bottom-right.
 
 The daily Sun/Moon ephemeris is treated separately from frequently
 changing weather. After a successful daily fetch, the rise/set values
@@ -128,6 +133,12 @@ are retained locally. After the local date changes, SOUND TERRARIUM
 requests the new day's values; if that update cannot be obtained, it
 keeps the last good values and retries periodically rather than
 replacing them with guessed data.
+
+Tide information is obtained separately from the Open-Meteo Marine API. The
+next high and low tide times and the current rising/falling direction are
+shown as auxiliary information. Tide data is refreshed periodically and, if a
+request fails, SOUND TERRARIUM keeps the last valid values when possible and
+retries later.
 
 Weather is represented visually with conditions such as:
 
@@ -170,7 +181,7 @@ fallback operation where possible.
   **W**   Wave
   **U**   UFO event
   **T**   Show / hide date, clock, weather and TEMP/HUM
-  **I**   Show / hide auxiliary information (SUN/MOON R/S, LOCATION and AP/Wi-Fi status)
+  **I**   Show / hide auxiliary information (SUN/MOON R/S, tide, PRES/RAIN, LOCATION and AP/Wi-Fi status)
   **S**   Open Wi-Fi SETUP
 
 The runner also responds to the **Cardputer ADV's IMU**. Tilting the
@@ -207,7 +218,7 @@ and longitude and stores the selected location locally.
 
 The saved location is then used for local weather, temperature, humidity,
 sunrise/sunset, moonrise/moonset, and timezone offset. This makes the device
-usable worldwide without editing latitude/longitude in the sketch. If the
+usable worldwide without editing latitude/longitude in the sketch. The same saved location is also used for tide calculations, pressure and precipitation-probability data. If the
 location field is left blank, the previously saved location is retained.
 
 SOUND TERRARIUM can store **up to five Wi-Fi networks** and attempts to
@@ -231,15 +242,15 @@ canvas and uses the same Open-Meteo-based location, weather and daily ephemeris
 concepts. It provides a **LOCATION SET** field for city-name lookup and, where
 the browser allows it, a **USE CURRENT LOCATION** option. The selected location
 is saved in browser local storage and drives the displayed local date/time,
-weather, temperature/humidity and Sun/Moon schedule.
+weather, temperature/humidity, pressure, precipitation probability, Sun/Moon schedule, and tide information.
 
 Because the browser version is intended as an easy way to try SOUND TERRARIUM,
 its interface and instructions are written in **English** for worldwide use.
-**SUN/MOON rise/set information and LOCATION are hidden by default** so they do
+**SUN/MOON rise/set information, tide information, PRES/RAIN and LOCATION are hidden by default** so they do
 not cover the generated terrain. Press **I (Information)** to show or hide them.
 When shown, **LOCATION appears at the bottom-left** of the browser scene. As on
 the Cardputer build, **T and I are independent**: T controls the normal
-date/time/weather/TEMP/HUM overlay, while I controls the auxiliary information.
+date/time/weather/TEMP/HUM overlay, while I controls SUN/MOON, tide, PRES/RAIN, LOCATION and other auxiliary information.
 Browser geolocation requires permission and may be unavailable in some local-file
 or non-secure contexts; city-name lookup remains available. When **USE CURRENT
 LOCATION** is used, the browser provides latitude/longitude and a key-free
@@ -348,7 +359,7 @@ The current sketch uses Arduino / ESP32 components including:
 -   ESP-IDF I2S API
 -   Open-Meteo
 
-Open-Meteo is used for weather and astronomical schedule data.
+Open-Meteo is used for weather and astronomical schedule data, and the Open-Meteo Marine API is used for tide information.
 
 ------------------------------------------------------------------------
 
@@ -392,7 +403,7 @@ SOUND TERRARIUM is currently in active development and real-device
 testing on the M5Stack Cardputer ADV.
 
 The present build includes the audio-generated terrain system, runner
-animations, IMU interaction, real-world weather and celestial display,
+animations, IMU interaction, real-world weather, tide and celestial display,
 scheduled events, offline fallback, worldwide city-based location selection,
 and browser-based multi-network Wi-Fi setup.
 
