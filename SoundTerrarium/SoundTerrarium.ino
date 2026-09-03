@@ -1,4 +1,4 @@
-// v108bi: v108bd layout + physical C long-hold (3 s) resets STEP to zero.
+// v108br: v108bq final cleanup; remove retired UFO rescue angle constants and write-only rescue hold state.
 // v108as: explicitly configure BMI270 accelerometer for Bosch step-counter feature (100 Hz, AVG4, +/-2 g).
 // v96 pale young-grass day ground + EQ outline synced to text ink: coarse/stable tilt, screen-space world tilt, near-edge return window,
  // 3s stable-level UFO rescue, and revised sky/cloud palette.
@@ -171,8 +171,6 @@ static constexpr float TILT_RELEASE_DEG = 1.5f;      // hysteresis: release only
 static constexpr float PLAY_PITCH_LIMIT_DEG = 42.0f; // laid down / strongly pitched = not a tilt command
 static constexpr float TILT_FILTER_ALPHA = 0.10f;    // smooth continuous control, no angle quantization
 static constexpr uint32_t RECOVERY_HOLD_MS = 5000;
-static constexpr float UFO_RESCUE_HOLD_ENTER_DEG = 45.0f; // if still this tilted when rescue arrives, keep runner aboard
-static constexpr float UFO_RESCUE_HOLD_RELEASE_DEG = 40.0f; // hysteresis: release only after tilt settles below this
 static constexpr float VIRTUAL_MARGIN_X = 120.0f;
 static bool imuReady=false;
 static float imuTiltDeg=0.0f, imuTiltSmoothDeg=0.0f, imuTiltDisplayDeg=0.0f;
@@ -241,9 +239,6 @@ static constexpr int EQ_GEN_W = 8 * EQ_GEN_BAR_W + 7 * EQ_GEN_GAP; // 54 px
 static constexpr int EQ_GEN_RIGHT = W - 3;
 static constexpr int EQ_GEN_LEFT = EQ_GEN_RIGHT - EQ_GEN_W;
 static constexpr float EQ_TERRAIN_VALLEY_Y = 116.0f;
-static constexpr float EQ_TERRAIN_SCALE = 0.80f;
-static float eqGeneratorProfile[EQ_GEN_W] = {0};
-static bool eqGeneratorReady = false;
 
 // ADV keyboard state.
 static bool advKeyboardReady = false;
@@ -350,7 +345,6 @@ struct UfoState {
   int lastScheduleDay=-1;
   int lastScheduleHour=-1;
   bool lostRunnerRescue=false;
-  bool rescueTiltHold=false;
 } ufo;
 
 bool ufoOwnsRunner(){
@@ -445,7 +439,6 @@ static constexpr uint32_t EPHEMERIS_RETRY_MS = 60UL*60UL*1000UL;
 static int ephemerisDateKey = 0;
 
 bool weatherOK = false;
-String weatherDiag = "WEATHER...";
 int lastHttpCode = 0;
 
 // v97 solar schedule. Open-Meteo returns local sunrise/sunset when timezone=auto.
@@ -464,7 +457,7 @@ static bool lunarScheduleValid = false;
 // T toggles only the date/time/weather block. Networking, NTP, weather and
 // celestial calculations continue normally while the text is hidden.
 static bool showClockInfo = true;
-static bool showAuxInfo = false; // I: ephemeris/location/tide/AP; hidden by default
+static bool showAuxInfo = false; // I: all auxiliary info (ephemeris/weather/AP/location/STEP/BAT); hidden by default
 
 static uint32_t lastTideAttemptMs = 0;
 static constexpr uint32_t TIDE_REFRESH_MS = 6UL*60UL*60UL*1000UL;
@@ -852,19 +845,19 @@ bool fetchDailyEphemeris(){
   prefs.putInt("ephdate",ephemerisDateKey);
 
   if(solarValid){
-    Serial.printf("[EPHEMERIS] %08d SUN %02d:%02d-%02d:%02d",
-                  ephemerisDateKey,
-                  sunriseMinutes/60,sunriseMinutes%60,
-                  sunsetMinutes/60,sunsetMinutes%60);
+    
+
+
+
   }else{
-    Serial.printf("[EPHEMERIS] %08d SUN unavailable",ephemerisDateKey);
+    
   }
   if(lunarValid){
-    Serial.printf(" MOON %02d:%02d-%02d:%02d\n",
-                  moonriseMinutes/60,moonriseMinutes%60,
-                  moonsetMinutes/60,moonsetMinutes%60);
+    
+
+
   }else{
-    Serial.println(" MOON unavailable");
+    
   }
   return true;
 }
@@ -888,7 +881,6 @@ void fetchWeather(){
 
   if(WiFi.status()!=WL_CONNECTED){
     weatherOK=false;
-    weatherDiag="NO WIFI";
     return;
   }
 
@@ -899,7 +891,6 @@ void fetchWeather(){
   lastWeatherAttempt=nowMs;
 
   weatherOK=false;
-  weatherDiag="WEATHER...";
   lastHttpCode=0;
 
   HTTPClient http;
@@ -915,7 +906,6 @@ void fetchWeather(){
   http.setTimeout(8000);
 
   if(!http.begin(url)){
-    weatherDiag="HTTP BEGIN FAIL";
     return;
   }
 
@@ -923,7 +913,6 @@ void fetchWeather(){
   lastHttpCode=code;
 
   if(code!=HTTP_CODE_OK){
-    weatherDiag="HTTP " + String(code);
     http.end();
     return;
   }
@@ -934,13 +923,11 @@ void fetchWeather(){
   JsonDocument doc;
   DeserializationError err=deserializeJson(doc,body);
   if(err){
-    weatherDiag="JSON FAIL";
     return;
   }
 
   JsonVariant current=doc["current"];
   if(current.isNull() || current["weather_code"].isNull()){
-    weatherDiag="NO WEATHER CODE";
     return;
   }
 
@@ -972,7 +959,6 @@ void fetchWeather(){
   if(weather.precipitationProbabilityPct>=0) prefs.putInt("pop",weather.precipitationProbabilityPct);
 
   weatherOK=true;
-  weatherDiag="WEATHER OK";
 }
 
 static bool fetchTides(){
@@ -1242,7 +1228,7 @@ static void pollAdvCursorKeys(){
     // While the setup portal is open, ANY physical key PRESS is an EXIT command.
     // Consume the key here so J/W/T/U/S do not also trigger their normal actions.
     if(wifiSetupMode && pressed){
-      Serial.println("[KEY] Wi-Fi SETUP -> EXIT");
+      
       wifiSetupMode=false;
       wifiSetupServer.stop();
       WiFi.softAPdisconnect(true);
@@ -1289,14 +1275,14 @@ static void pollAdvCursorKeys(){
     }else if(row==1 && col==8){
       // I = Information: auxiliary screen labels, hidden by default.
       showAuxInfo=!showAuxInfo;
-      Serial.printf("[KEY] I -> INFO %s\n",showAuxInfo?"ON":"OFF");
+      
     }else if(row==1 && col==5){
       // T: show/hide the date + clock + weather text as one block.
       showClockInfo=!showClockInfo;
     }else if(row==1 && col==7){
       startUfoShift();
     }else if(row==2 && col==3){
-      Serial.println("[KEY] S -> Wi-Fi SETUP");
+      
       // S = Setup. Enter the Wi-Fi setup portal even while already connected.
       // Existing saved credentials are preserved; the portal can add/update APs.
       if(!wifiSetupMode){
@@ -1538,101 +1524,7 @@ static void updateVisibleEqTopY(){
   visibleEqTopReady=true;
 }
 
-static float eqBandTerrainY(int b){
-  b=clampi(b,0,7);
-  float n=(audioDiagScale>0.0f)?audioDiagBands[b]/audioDiagScale:0.0f;
-  n=clampf(n,0.0f,1.0f);
-  return EQ_TERRAIN_VALLEY_Y -
-         n*(EQ_TERRAIN_VALLEY_Y-(float)TERRAIN_HIGH)*EQ_TERRAIN_SCALE;
-}
-
-static float catmullRom1D(float p0,float p1,float p2,float p3,float t){
-  float t2=t*t;
-  float t3=t2*t;
-  return 0.5f*((2.0f*p1) +
-               (-p0+p2)*t +
-               (2.0f*p0-5.0f*p1+4.0f*p2-p3)*t2 +
-               (-p0+3.0f*p1-3.0f*p2+p3)*t3);
-}
-
-static void updateEqGeneratorProfile(){
-  // v93: each EQ BAR CENTER is one terrain control point.
-  // Bar width is no longer copied into the road. A Catmull-Rom curve passes
-  // through the eight centers, removing the stair-step/block-width character.
-  float cx[8];
-  float cy[8];
-  for(int b=0;b<8;b++){
-    cx[b]=(float)(b*(EQ_GEN_BAR_W+EQ_GEN_GAP) + EQ_GEN_BAR_W/2);
-    cy[b]=eqBandTerrainY(b);
-  }
-
-  for(int lx=0;lx<EQ_GEN_W;lx++){
-    float x=(float)lx;
-
-    if(x<=cx[0]){
-      eqGeneratorProfile[lx]=cy[0];
-      continue;
-    }
-    if(x>=cx[7]){
-      eqGeneratorProfile[lx]=cy[7];
-      continue;
-    }
-
-    int seg=0;
-    while(seg<6 && x>cx[seg+1]) seg++;
-
-    float span=cx[seg+1]-cx[seg];
-    float t=(span>0.0f)?(x-cx[seg])/span:0.0f;
-    t=clampf(t,0.0f,1.0f);
-
-    float p0=cy[(seg>0)?seg-1:seg];
-    float p1=cy[seg];
-    float p2=cy[seg+1];
-    float p3=cy[(seg+2<8)?seg+2:seg+1];
-
-    float y=catmullRom1D(p0,p1,p2,p3,t);
-    eqGeneratorProfile[lx]=clampf(y,(float)TERRAIN_HIGH,EQ_TERRAIN_VALLEY_Y);
-  }
-  eqGeneratorReady=true;
-}
-
-float terrainTargetFromEqMax(){
-  // v84 CLEAN PATH:
-  // The terrain height is taken DIRECTLY from the tallest of the same eight
-  // smoothed/normalized bars that are visible in the colorful Audio City.
-  //
-  // No centroid mapping.
-  // No learned frequency range.
-  // No pow() response curve.
-  // No audioPresent gate.
-  // No extra terrain smoothing.
-  // No terrain gain multiplier.
-  float maxBand=0.0f;
-  for(int b=0;b<8;b++){
-    if(audioDiagBands[b]>maxBand) maxBand=audioDiagBands[b];
-  }
-
-  float n=(audioDiagScale>0.0f)?(maxBand/audioDiagScale):0.0f;
-  n=clampf(n,0.0f,1.0f);
-
-  // Fixed visual mapping only: silent/short EQ -> valley, tallest EQ -> high hill.
-  // This is not an audio modifier; it only converts the 0..1 visible bar height
-  // to LCD Y coordinates.
-  const float valleyY=116.0f;
-  const float summitY=(float)TERRAIN_HIGH;
-  const float TERRAIN_AMPLITUDE_SCALE=0.80f; // v86: reduce only visible terrain excursion by 20%
-  return valleyY - n*(valleyY-summitY)*TERRAIN_AMPLITUDE_SCALE;
-}
-
 void updateRunner(bool motionTick); // forward declaration
-
-void shiftTerrainOnePixel(float targetY){
-  for(int x=0;x<W-1;x++) terrain[x]=terrain[x+1];
-
-  // v85: targetY is already the interpolated EQ-derived height for THIS pixel.
-  // Do not add smoothing or slope shaping here.
-  terrain[W-1]=(uint8_t)clampi((int)roundf(targetY),TERRAIN_HIGH,TERRAIN_LOW);
-}
 
 
 
@@ -1758,7 +1650,7 @@ static bool bmiConfigureAccelForStepCounter(){
   uint8_t conf=0,range=0;
   if(ok) ok=bmiReadRegs(BMI270_ACC_CONF_ADDR,&conf,1);
   if(ok) ok=bmiReadRegs(BMI270_ACC_RANGE_ADDR,&range,1);
-  Serial.printf("[STEP] ACC_CONF=0x%02X ACC_RANGE=0x%02X\n",conf,range);
+  
   return ok && conf==BMI270_STEP_ACC_CONF && (range&0x03)==BMI270_STEP_ACC_RANGE;
 }
 
@@ -1799,13 +1691,13 @@ static void loadStepCounterState(){
 
 static void resetStepCounterByUser(){
   if(!stepCounterReady){
-    Serial.println("[STEP] reset ignored: counter unavailable");
+    
     return;
   }
 
   uint32_t raw=0;
   if(!bmiReadBuiltInStepCount(raw)){
-    Serial.println("[STEP] reset failed: raw counter read error");
+    
     return;
   }
 
@@ -1818,7 +1710,7 @@ static void resetStepCounterByUser(){
   stepLastSaveMs=stepLastReadMs;
   prefs.putInt("stepday",stepDateKey);
   prefs.putUInt("steps",0);
-  Serial.println("[STEP] reset by C hold");
+  
 }
 
 static void serviceStepCounter(){
@@ -1897,10 +1789,10 @@ static bool initAdvImuOnce(){
     uint32_t raw=0;
     if(stepCounterReady && bmiReadBuiltInStepCount(raw)){
       stepRawOrigin=raw;
-      Serial.printf("[STEP] BMI270 counter ready raw=%lu\n",(unsigned long)raw);
+      
     }else{
       stepCounterReady=false;
-      Serial.println("[STEP] BMI270 counter unavailable");
+      
     }
   }
   return ok;
@@ -1916,7 +1808,6 @@ static void startLostRunnerRescue(){
 
   ufo.active=true;
   ufo.lostRunnerRescue=true;
-  ufo.rescueTiltHold=false;
   ufo.phase=(lostSide<0)?UFO_RETURN_LEFT:UFO_RETURN_RIGHT; // runner is already gone
   ufo.x=(lostSide<0)?-30.0f:(float)W+30.0f;
   ufo.y=23;
@@ -2229,7 +2120,6 @@ void startUfoShift(){
   if(ufo.active) return;
   ufo.active=true;
   ufo.lostRunnerRescue=false;
-  ufo.rescueTiltHold=false;
   ufo.phase=UFO_ENTER_LEFT;
   ufo.x=-30;
   ufo.y=23;
@@ -2329,19 +2219,18 @@ void updateUfo(){
     if(ufo.x<=ufo.targetX){
       ufo.x=ufo.targetX;
 
-      // Automatic lost-runner rescue always arrives after 5 s, but if the
-      // Cardputer is still held at an extreme left/right angle, do not drop
-      // the runner straight back into the same off-screen slide.
+      // Automatic lost-runner rescue always arrives after 5 s, but only drop
+      // the runner when the SAME raw-roll criterion used by updateTiltPhysics()
+      // says that releasing it will not immediately restart the slide.
+      // Pitch/non-play poses already suspend tilt physics, so they are safe to drop.
       if(ufo.lostRunnerRescue && imuReady){
-        if(!ufo.rescueTiltHold && fabsf(imuTiltDeg)>=UFO_RESCUE_HOLD_ENTER_DEG){
-          ufo.rescueTiltHold=true;
-        }
-        if(ufo.rescueTiltHold && fabsf(imuTiltDeg)>UFO_RESCUE_HOLD_RELEASE_DEG){
+        bool rescueDropUnsafe =
+          imuPlayPose && fabsf(imuTiltDeg)>WORLD_TILT_INPUT_FULL_DEG;
+        if(rescueDropUnsafe){
           runner.x=ufo.x-5;
           runner.y=ufo.y+5;
           return;
         }
-        ufo.rescueTiltHold=false;
       }
 
       ufo.phase=UFO_DROP_BEAM;
@@ -2356,15 +2245,13 @@ void updateUfo(){
       ufo.x=ufo.targetX;
 
       if(ufo.lostRunnerRescue && imuReady){
-        if(!ufo.rescueTiltHold && fabsf(imuTiltDeg)>=UFO_RESCUE_HOLD_ENTER_DEG){
-          ufo.rescueTiltHold=true;
-        }
-        if(ufo.rescueTiltHold && fabsf(imuTiltDeg)>UFO_RESCUE_HOLD_RELEASE_DEG){
+        bool rescueDropUnsafe =
+          imuPlayPose && fabsf(imuTiltDeg)>WORLD_TILT_INPUT_FULL_DEG;
+        if(rescueDropUnsafe){
           runner.x=ufo.x-5;
           runner.y=ufo.y+5;
           return;
         }
-        ufo.rescueTiltHold=false;
       }
 
       ufo.phase=UFO_DROP_BEAM;
@@ -2406,7 +2293,6 @@ void updateUfo(){
       ufo.phase=UFO_IDLE;
       ufo.phaseT=0;
       ufo.lostRunnerRescue=false;
-      ufo.rescueTiltHold=false;
       runner.x=RUNNER_TARGET_X;
       runner.state=RS_RUN;
     }
@@ -2850,6 +2736,18 @@ static void clockRetroPalette(const struct tm &t,
   weatherColor= lerpRgb565(255, 79,216, 144,  0, 88,d);
 }
 
+// Cardputer ADV battery detect is GPIO10 through a 1:2 divider.
+// Keep this deliberately lightweight: raw ADC only, no calibrated millivolt API.
+// The percentage is a reference estimate, matching STEP's reference-information role.
+static int readBatteryPercent(){
+  int raw=analogRead(10);
+  // Approximate 3.30..4.20 V battery range after the 1:2 divider.
+  // With ESP32-S3 Arduino 12-bit ADC / default attenuation this corresponds
+  // roughly to raw 1689..2150. Clamp outside that range.
+  int pct=(raw-1689)*100/461;
+  return clampi(pct,0,100);
+}
+
 void drawClockInfoOverlay(){
   // T and I are deliberately independent:
   // T = normal clock/weather text (visible by default)
@@ -2935,49 +2833,49 @@ void drawClockInfoOverlay(){
       }
     }
 
-    // LOCATION remains at bottom-left.
+    // I owns the complete auxiliary-information layer.
+    // Left bottom: STEP above AP, then LOCATION. AP itself is drawn by
+    // drawNetworkStatusBox() at H-12.
+    char stepb[24];
+    if(stepCounterReady) snprintf(stepb,sizeof(stepb),"STEP %lu",(unsigned long)stepToday);
+    else snprintf(stepb,sizeof(stepb),"STEP ----");
+    canvas.setTextDatum(bottom_left);
+    canvas.drawString(stepb,3,H-22);
+
     char locLabel[33];
     snprintf(locLabel,sizeof(locLabel),"%.32s",locationName.c_str());
-    canvas.setTextDatum(bottom_left);
     canvas.drawString(locLabel,3,H-2);
 
-    // Detailed weather information belongs to I (auxiliary information).
-    char auxPress[20],auxPop[16];
+    // Right top: current atmosphere + detailed weather, all I-linked.
+    char tempb[20],humb[16],auxPress[20],auxPop[16];
+    if(isfinite(weather.temperatureC)) snprintf(tempb,sizeof(tempb),"TEMP %.1fC",weather.temperatureC);
+    else snprintf(tempb,sizeof(tempb),"TEMP --.-C");
+    if(weather.humidityPct>=0) snprintf(humb,sizeof(humb),"HUM  %d%%",weather.humidityPct);
+    else snprintf(humb,sizeof(humb),"HUM  --%%");
     if(isfinite(weather.pressureMslHpa)) snprintf(auxPress,sizeof(auxPress),"PRES %.0fhPa",weather.pressureMslHpa);
     else snprintf(auxPress,sizeof(auxPress),"PRES ----hPa");
     if(weather.precipitationProbabilityPct>=0) snprintf(auxPop,sizeof(auxPop),"RAIN %d%%",weather.precipitationProbabilityPct);
     else snprintf(auxPop,sizeof(auxPop),"RAIN --%%");
     canvas.setTextDatum(top_left);
+    canvas.drawString(tempb,174,2);
+    canvas.drawString(humb,174,12);
     canvas.drawString(auxPress,174,22);
     canvas.drawString(auxPop,174,32);
+
+    // BAT sits directly below the right-side EQ and shares its left edge.
+    char batb[16];
+    snprintf(batb,sizeof(batb),"BAT %d%%",readBatteryPercent());
+    canvas.setTextDatum(bottom_left);
+    canvas.drawString(batb,EQ_GEN_LEFT,H-2);
   }
 
   if(showClockInfo){
-    char tb[16],db[24],tempb[20],humb[16];
+    char tb[16],db[24];
     static const char* WDAYS[7]={"SUN","MON","TUE","WED","THU","FRI","SAT"};
     strftime(tb,sizeof(tb),"%H:%M",&t);
     snprintf(db,sizeof(db),"%04d.%02d.%02d %s",
              t.tm_year+1900,t.tm_mon+1,t.tm_mday,
              (t.tm_wday>=0 && t.tm_wday<7)?WDAYS[t.tm_wday]:"---");
-    if(isfinite(weather.temperatureC)) snprintf(tempb,sizeof(tempb),"TEMP %.1fC",weather.temperatureC);
-    else snprintf(tempb,sizeof(tempb),"TEMP --.-C");
-    if(weather.humidityPct>=0) snprintf(humb,sizeof(humb),"HUM  %d%%",weather.humidityPct);
-    else snprintf(humb,sizeof(humb),"HUM  --%%");
-
-    // v108: right = current atmosphere.
-    canvas.setFont(&fonts::Font0);
-    canvas.setTextSize(1);
-    canvas.setTextDatum(top_left);
-    canvas.drawString(tempb,174,2);
-    canvas.drawString(humb,174,12);
-
-    // STEP: T-linked at bottom-right. 'S' begins exactly at EQ_GEN_LEFT.
-    char stepb[24];
-    if(stepCounterReady) snprintf(stepb,sizeof(stepb),"STEP %lu",(unsigned long)stepToday);
-    else snprintf(stepb,sizeof(stepb),"STEP ----");
-    canvas.setTextDatum(bottom_left);
-    canvas.drawString(stepb,EQ_GEN_LEFT,H-2);
-
     // Central information block.
     // M5GFX ships FreeSansBold at 9/12/18/24pt, so use its float text scaling
     // to obtain the requested effective sizes without changing font family:
@@ -3155,7 +3053,10 @@ void drawFrame(){
   // Compose the complete frame off-screen.
   drawWeatherAndClock();
   drawTerrain();
-  drawAudioDiagnostic(); // v91: visible EQ terrain generator, bars meet the road
+  // EQ is an I-layer visualization only. The audio-band analysis and
+  // terrain generator keep running regardless of I, so hiding the bars
+  // never changes the sound-driven ground motion.
+  if(showAuxInfo) drawAudioDiagnostic();
   drawUfo();
   drawRunner();
 
@@ -3327,8 +3228,6 @@ bool setLocationFromCity(const String &city){
   weather.pressureMslHpa=NAN;
   weather.precipitationProbabilityPct=-1;
   weather.online=false;
-  weatherDiag="UPDATING...";
-
   tide.valid=false;
   tide.nextHighEpoch=0;
   tide.nextLowEpoch=0;
@@ -3744,11 +3643,11 @@ static void servicePendingWiFiSetup(){
     if(pendingLocationChanged && wifiOK){
       struct tm refreshedLocal;
       localNow(refreshedLocal);
-      Serial.printf("[LOCATION] %s  %04d-%02d-%02d %02d:%02d  TEMP %.1fC HUM %d%%\n",
-                    locationName.c_str(),
-                    refreshedLocal.tm_year+1900,refreshedLocal.tm_mon+1,refreshedLocal.tm_mday,
-                    refreshedLocal.tm_hour,refreshedLocal.tm_min,
-                    weather.temperatureC,weather.humidityPct);
+      
+
+
+
+
     }
 
     pendingSetupStage=PSET_IDLE;
@@ -3765,7 +3664,7 @@ static void servicePendingWiFiSetup(){
 void setup(){
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[BOOT] SOUND TERRARIUM v108as step accel-config fix STEP DIAGNOSTIC step info layout");
+  
   delay(100);
 
   // Initialize only the LCD; do not globally initialize M5Unified/Cardputer.
@@ -3850,18 +3749,7 @@ void drawNetworkStatusBox(){
   canvas.setTextDatum(top_left);
 }
 
-void drawWeatherDiagnostic(){
-  if(weatherOK && millis()>20000) return;
-  canvas.setFont(&fonts::Font0);
-  canvas.setTextSize(1);
-  struct tm st;
-  localNow(st);
-  uint16_t statusInk=readableInkForSky(skyColorForTime(st));
-  canvas.setTextColor(statusInk);
-  canvas.setTextDatum(bottom_right);
-  canvas.drawString(weatherDiag,W-3,H-2);
-  canvas.setTextDatum(top_left);
-}
+
 
 void loop(){
   servicePendingWiFiSetup();

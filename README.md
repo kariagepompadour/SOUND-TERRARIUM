@@ -27,17 +27,18 @@ Cardputer ADV**.
 
 Set a city anywhere in the world, and SOUND TERRARIUM brings its
 present moment into the tiny screen — local time, current weather,
-temperature and humidity, atmospheric pressure, precipitation probability,
+temperature and humidity, atmospheric pressure, precipitation probability, battery status,
 sunrise and sunset, moonrise and moonset, tide information, lunar phase,
 a reference step count from the built-in BMI270 IMU, and the changing light
 from day through twilight into night.
 
 The built-in microphone listens to the sound around the device and
-analyzes it in real time. An 8-band graphic equalizer appears at the
-lower-right of the screen --- but it is not just a visualizer. **The
-visible EQ itself generates the terrain.** New ground is born at the
-right edge, scrolls across the screen, and a tiny runner lives and runs
-on the landscape created by sound.
+analyzes it in real time. An 8-band graphic equalizer drives the terrain
+generator. The EQ display itself is hidden in the normal terrarium view
+and can be revealed with **I (Information)**. Whether the bars are visible
+or hidden, the same eight-band analysis continues to generate the terrain.
+New ground is born at the right edge, scrolls across the screen, and a tiny
+runner lives and runs on the landscape created by sound.
 
 At the same time, the sky is connected to the real world. When Wi-Fi is
 available, SOUND TERRARIUM uses current time and Open-Meteo data to
@@ -71,9 +72,9 @@ The Cardputer ADV build also uses the **BMI270 built-in Step Counter** to show
 and accuracy varies with how the Cardputer ADV is carried or moved. It is not
 intended as a fitness or medical measurement.
 
-**STEP is part of the T display** and appears at the bottom-right of the scene,
-aligned with the left edge of the graphic EQ. Hold **C for 3 seconds** to reset
-the displayed STEP count to **0**.
+**STEP is part of the I (Information) display** and appears at the bottom-left,
+directly above **AP / Wi-Fi status** and **LOCATION**. Hold **C for 3 seconds**
+to reset the displayed STEP count to **0**.
 
 ------------------------------------------------------------------------
 
@@ -83,9 +84,9 @@ the displayed STEP count to **0**.
 
 -   Uses the **Cardputer ADV built-in microphone**
 -   Real-time spectral analysis from approximately **80--1800 Hz**
--   Eight visible EQ bands
+-   Eight-band EQ terrain generator; its bars are shown or hidden with **I**
 -   Cool-to-warm retro EQ palette
--   The visible EQ heights directly generate new terrain
+-   The eight EQ band heights directly generate new terrain even while the bars are hidden
 -   Generated terrain scrolls from right to left
 -   Audio activity also influences the pace of the world
 -   Quiet periods fall back smoothly to an idle running pace
@@ -98,11 +99,10 @@ including running, jumping, climbing, falling, and waving.
 There are also manual and scheduled events, including a UFO sequence. On the
 Cardputer ADV build, if tilt carries the runner completely off-screen, there is
 a five-second self-recovery window; if the runner is still missing after that,
-a UFO rescue sequence automatically comes to bring it back. If the Cardputer is
-still held at a very steep left/right angle when the rescue reaches the return
-point, the UFO keeps the runner safely aboard instead of immediately dropping
-it back into the same slide. The runner is returned to the terrain after the
-device is brought back to a safer angle.
+a UFO rescue sequence automatically comes to bring it back. If dropping the
+runner would immediately cause it to slide off-screen again under the current
+tilt physics, the UFO keeps the runner safely aboard. The runner is returned to
+the terrain once the current device pose no longer causes that slide.
 
 ### A sky connected to the real world
 
@@ -123,15 +123,16 @@ When an Internet connection is available, SOUND TERRARIUM uses
 -   Location-aware timezone and local clock
 -   Daytime Moon visibility that becomes paler as daylight increases
 
-The normal weather panel shows **TEMP** (temperature in °C) and **HUM**
-(relative humidity in %). These remain part of the standard **T** display.
+**T** is reserved for the central clock view: local date, weekday, time and
+weather. **TEMP** (temperature in °C) and **HUM** (relative humidity in %)
+are part of the **I (Information)** display.
 
 More detailed environmental information is treated as auxiliary data:
 **PRES** (mean sea-level pressure), **RAIN** (hourly precipitation probability
-provided by Open-Meteo for the configured location), daily **SUN/MOON rise/set
-schedules**, **HIGH/LOW tide times**, current
-**TIDE UP / TIDE DN** direction, the saved **LOCATION**, and the current
-**AP / Wi-Fi status**. These are hidden by default to keep the 240 × 135
+provided by Open-Meteo for the configured location), **TEMP/HUM**, daily
+**SUN/MOON rise/set schedules**, **HIGH/LOW tide times**, current
+**TIDE UP / TIDE DN** direction, **STEP**, the saved **LOCATION**, current
+**AP / Wi-Fi status**, battery level (**BAT**), and the visible **8-band EQ**. These are hidden by default to keep the 240 × 135
 world unobstructed and can be shown or hidden together with the
 **I (Information)** key. **I is independent of T**, so auxiliary information
 can remain visible even when the normal date/clock/weather overlay is hidden.
@@ -140,9 +141,10 @@ The IMU still controls world tilt and runner movement, but its numeric
 left/right and front/back angle diagnostics are no longer drawn on the normal
 scene. When auxiliary information is shown, **HIGH** and **LOW** tide times are
 stacked beneath the SUN/MOON information with a compact blue three-line wave
-symbol. **AP / Wi-Fi status** appears directly above **LOCATION** at the
-bottom-left. **STEP** remains part of the independent **T** display at the
-bottom-right.
+symbol. At the bottom-left, **STEP** appears above **AP / Wi-Fi status**, with
+**LOCATION** below it. At the lower-right, **BAT** appears below the EQ. The EQ
+is visible only while **I** is on, but its audio analysis continues unchanged
+while hidden, so the sound-generated terrain never stops responding.
 
 The daily Sun/Moon ephemeris is treated separately from frequently
 changing weather. After a successful daily fetch, the rise/set values
@@ -182,7 +184,7 @@ experience**.
 
 Runtime Wi-Fi reconnection is handled without blocking the visual loop. When no saved access point is available, the clock, terrain, runner, audio-reactive scene and controls continue operating while reconnection attempts happen in the background.
 
-Audio analysis, the EQ, terrain generation, the runner, and the main
+Audio analysis, the hidden-or-visible EQ engine, terrain generation, the runner, and the main
 animation continue locally on the Cardputer ADV.
 
 Previously obtained time/weather/solar information is retained for
@@ -197,8 +199,8 @@ fallback operation where possible.
   **J**   Jump
   **W**   Wave
   **U**   UFO event
-  **T**   Show / hide date, clock, weather, TEMP/HUM and STEP
-  **I**   Show / hide auxiliary information (SUN/MOON R/S, tide, PRES/RAIN, LOCATION and AP/Wi-Fi status)
+  **T**   Show / hide date, weekday, clock and weather
+  **I**   Show / hide detailed information and EQ (SUN/MOON R/S, tide, TEMP/HUM, PRES/RAIN, STEP, AP/LOCATION, BAT and 8-band EQ)
   **C**   Hold for 3 seconds to reset STEP to 0
   **S**   Open Wi-Fi SETUP
 
@@ -265,14 +267,16 @@ weather, temperature/humidity, pressure, precipitation probability, Sun/Moon sch
 Because the browser version is intended as an easy way to try SOUND TERRARIUM,
 its interface and instructions are written in **English** for worldwide use.
 Because a browser has neither the Cardputer ADV's BMI270 step counter nor its
-Wi-Fi access-point state, the browser scene shows **STEP xxxx** and
-**AP: xxxxxxxx** as layout placeholders rather than inventing values.
-**SUN/MOON rise/set information, tide information, PRES/RAIN and LOCATION are hidden by default** so they do
-not cover the generated terrain. Press **I (Information)** to show or hide them.
+Wi-Fi access-point state, the browser scene shows **STEP xxxx**, **AP: xxxxxxxx**, and **BAT xx%** as
+layout placeholders rather than inventing values.
+**Detailed information and the visible EQ are hidden by default** so they do
+not cover the generated terrain. Press **I (Information)** to show or hide
+SUN/MOON, tide, TEMP/HUM, PRES/RAIN, STEP/AP/LOCATION, BAT, and the 8-band EQ.
+The EQ continues to drive the terrain while its bars are hidden.
 When shown, **LOCATION appears at the bottom-left** of the browser scene. As on
 the Cardputer build, **T and I are independent**: T controls the normal
-date/time/weather/TEMP/HUM overlay, while I controls SUN/MOON, tide, PRES/RAIN,
-LOCATION and other auxiliary information. **STEP is Cardputer-ADV-only** because
+date/weekday/time/weather overlay, while I controls SUN/MOON, tide, TEMP/HUM,
+PRES/RAIN, STEP/AP/LOCATION, BAT, and the visible EQ. **STEP is Cardputer-ADV-only** because
 it uses the device's physical BMI270 IMU; the browser version does not simulate
 a step count.
 Browser geolocation requires permission and may be unavailable in some local-file
