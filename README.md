@@ -115,8 +115,9 @@ The normal weather panel shows **TEMP** (temperature in °C) and **HUM**
 (relative humidity in %). These remain part of the standard **T** display.
 
 More detailed environmental information is treated as auxiliary data:
-**PRES** (mean sea-level pressure), **RAIN** (precipitation probability),
-daily **SUN/MOON rise/set schedules**, **HIGH/LOW tide times**, current
+**PRES** (mean sea-level pressure), **RAIN** (hourly precipitation probability
+provided by Open-Meteo for the configured location), daily **SUN/MOON rise/set
+schedules**, **HIGH/LOW tide times**, current
 **TIDE UP / TIDE DN** direction, the saved **LOCATION**, and the current
 **AP / Wi-Fi status**. These are hidden by default to keep the 240 × 135
 world unobstructed and can be shown or hidden together with the
