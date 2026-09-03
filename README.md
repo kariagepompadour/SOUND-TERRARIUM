@@ -29,7 +29,8 @@ Set a city anywhere in the world, and SOUND TERRARIUM brings its
 present moment into the tiny screen — local time, current weather,
 temperature and humidity, atmospheric pressure, precipitation probability,
 sunrise and sunset, moonrise and moonset, tide information, lunar phase,
-and the changing light from day through twilight into night.
+a reference step count from the built-in BMI270 IMU, and the changing light
+from day through twilight into night.
 
 The built-in microphone listens to the sound around the device and
 analyzes it in real time. An 8-band graphic equalizer appears at the
@@ -62,6 +63,17 @@ terrain being generated in real time.
 
 The Cardputer ADV's IMU is also part of the world: tilting the device
 tilts the displayed terrain and affects the runner's movement.
+
+### Step counter
+
+The Cardputer ADV build also uses the **BMI270 built-in Step Counter** to show
+**STEP** as a reference value. The count may be reflected after a short delay,
+and accuracy varies with how the Cardputer ADV is carried or moved. It is not
+intended as a fitness or medical measurement.
+
+**STEP is part of the T display** and appears at the bottom-right of the scene,
+aligned with the left edge of the graphic EQ. Hold **C for 3 seconds** to reset
+the displayed STEP count to **0**.
 
 ------------------------------------------------------------------------
 
@@ -126,7 +138,11 @@ can remain visible even when the normal date/clock/weather overlay is hidden.
 
 The IMU still controls world tilt and runner movement, but its numeric
 left/right and front/back angle diagnostics are no longer drawn on the normal
-scene. When auxiliary information is shown, **HIGH** and **LOW** tide times are stacked near the bottom-left, the current **TIDE UP / TIDE DN** state appears beside the LOW line, and **LOCATION** is displayed below them. AP / Wi-Fi status remains at the bottom-right.
+scene. When auxiliary information is shown, **HIGH** and **LOW** tide times are
+stacked beneath the SUN/MOON information with a compact blue three-line wave
+symbol. **AP / Wi-Fi status** appears directly above **LOCATION** at the
+bottom-left. **STEP** remains part of the independent **T** display at the
+bottom-right.
 
 The daily Sun/Moon ephemeris is treated separately from frequently
 changing weather. After a successful daily fetch, the rise/set values
@@ -181,8 +197,9 @@ fallback operation where possible.
   **J**   Jump
   **W**   Wave
   **U**   UFO event
-  **T**   Show / hide date, clock, weather and TEMP/HUM
+  **T**   Show / hide date, clock, weather, TEMP/HUM and STEP
   **I**   Show / hide auxiliary information (SUN/MOON R/S, tide, PRES/RAIN, LOCATION and AP/Wi-Fi status)
+  **C**   Hold for 3 seconds to reset STEP to 0
   **S**   Open Wi-Fi SETUP
 
 The runner also responds to the **Cardputer ADV's IMU**. Tilting the
@@ -247,11 +264,17 @@ weather, temperature/humidity, pressure, precipitation probability, Sun/Moon sch
 
 Because the browser version is intended as an easy way to try SOUND TERRARIUM,
 its interface and instructions are written in **English** for worldwide use.
+Because a browser has neither the Cardputer ADV's BMI270 step counter nor its
+Wi-Fi access-point state, the browser scene shows **STEP xxxx** and
+**AP: xxxxxxxx** as layout placeholders rather than inventing values.
 **SUN/MOON rise/set information, tide information, PRES/RAIN and LOCATION are hidden by default** so they do
 not cover the generated terrain. Press **I (Information)** to show or hide them.
 When shown, **LOCATION appears at the bottom-left** of the browser scene. As on
 the Cardputer build, **T and I are independent**: T controls the normal
-date/time/weather/TEMP/HUM overlay, while I controls SUN/MOON, tide, PRES/RAIN, LOCATION and other auxiliary information.
+date/time/weather/TEMP/HUM overlay, while I controls SUN/MOON, tide, PRES/RAIN,
+LOCATION and other auxiliary information. **STEP is Cardputer-ADV-only** because
+it uses the device's physical BMI270 IMU; the browser version does not simulate
+a step count.
 Browser geolocation requires permission and may be unavailable in some local-file
 or non-secure contexts; city-name lookup remains available. When **USE CURRENT
 LOCATION** is used, the browser provides latitude/longitude and a key-free
@@ -396,6 +419,15 @@ The tilt is not a meter --- it changes the world the runner lives in.
 That relationship between **sound, reality, and a tiny living world** is
 the core of SOUND TERRARIUM.
 
+### BONSAI Spirit
+
+SOUND TERRARIUM follows a **BONSAI Spirit**: a small device containing a small
+world, carefully shaped from the capabilities already inside it. The goal is
+not to pile on features, but to let each useful capability become a natural
+part of the terrarium.
+
+**Small device. Small world. BONSAI Spirit.**
+
 ------------------------------------------------------------------------
 
 ## Status
@@ -404,8 +436,8 @@ SOUND TERRARIUM is currently in active development and real-device
 testing on the M5Stack Cardputer ADV.
 
 The present build includes the audio-generated terrain system, runner
-animations, IMU interaction, real-world weather, tide and celestial display,
-scheduled events, offline fallback, worldwide city-based location selection,
+animations, IMU interaction, BMI270 reference step counting, real-world weather,
+tide and celestial display, scheduled events, offline fallback, worldwide city-based location selection,
 and browser-based multi-network Wi-Fi setup.
 
 ------------------------------------------------------------------------

@@ -1,3 +1,5 @@
+// v108bi: v108bd layout + physical C long-hold (3 s) resets STEP to zero.
+// v108as: explicitly configure BMI270 accelerometer for Bosch step-counter feature (100 Hz, AVG4, +/-2 g).
 // v96 pale young-grass day ground + EQ outline synced to text ink: coarse/stable tilt, screen-space world tilt, near-edge return window,
  // 3s stable-level UFO rescue, and revised sky/cloud palette.
 // Based on v52; microphone/terrain analysis itself is unchanged.
@@ -7,6 +9,9 @@
 // v98: real moonrise/moonset, low on-screen celestial arcs, centered clock block, T toggles date/time/weather.
 // v102: SUN rise/set moved upper-left, MOON rise/set upper-right; date/weekday same size but bold; day/night ground both Choplifter sand #E9B86A.
 // v104: renamed SOUND TERRARIUM / inspired by retro arcade; Claude review hardening: rate-limited NTP/Wi-Fi retries, bounded I2S read, safer scheduled UFO window, reduced per-frame String churn.
+// v108ar STEP DIAGNOSTIC: C key 3-second hold resets the daily STEP reference count to zero.
+// v108ap: move STEP into I auxiliary info above LOCATION; compact tide into a SUN/MOON-aligned third line.
+// v108ao: add BMI270 built-in step counter and normal STEP display below the right-side EQ.
 // v108am: tide display layout = vertical HIGH/LOW, with TIDE UP/DN to the right of LOW.
 // v108ak: add Open-Meteo Marine tide HIGH/LOW display (I), plus MSL pressure and precipitation probability (T).
 // v108x: night stars keep the existing positions/count, add sparse blue/red/yellow accents, and five phase-staggered twinkling stars.\n// v108w: central line spacing relaxed by 1px per gap: DATE y=35, TIME y=47, WEATHER y=72.\n// v108v: WEATHER now uses the same FreeSansBold9pt 7/9 scale as DATE/weekday.\n// v108u: DATE/weekday 7pt, TIME 16pt, WEATHER 6pt; compacted spacing; LOCATION moved to bottom-left.\n// v108t: compact central clock stack after font reduction; TIME y=47, WEATHER y=73.\n// v108m: Cloud brightness now follows the same continuous solar-elevation model as the sky.
@@ -145,6 +150,20 @@ static constexpr uint8_t TCA_REG_KP_GPIO_3 = 0x1F;
 // Cardputer ADV BMI270 on the same internal I2C bus.
 static constexpr uint8_t BMI270_ADDR = 0x69;
 static constexpr uint8_t BMI270_ACC_X_LSB = 0x0C;
+static constexpr uint8_t BMI270_ACC_CONF_ADDR = 0x40;
+static constexpr uint8_t BMI270_ACC_RANGE_ADDR = 0x41;
+// Bosch feature algorithms are defined against a configured accelerometer.
+// Use the Bosch example settings: 100 Hz, normal AVG4, performance mode, +/-2 g.
+static constexpr uint8_t BMI270_STEP_ACC_CONF = 0xA8; // perf=1, bwp=AVG4(2), odr=100Hz(8)
+static constexpr uint8_t BMI270_STEP_ACC_RANGE = 0x00; // +/-2 g
+// BMI270 feature engine registers. M5Unified uploads the Bosch configuration
+// during initAdvImuOnce(); these registers then expose the built-in Step Counter.
+static constexpr uint8_t BMI270_FEAT_PAGE_REG = 0x2F;
+static constexpr uint8_t BMI270_FEATURES_REG  = 0x30;
+static constexpr uint8_t BMI270_STEP_CFG_PAGE = 0x06;
+static constexpr uint8_t BMI270_STEP_CFG_START = 0x02;
+static constexpr uint8_t BMI270_STEP_ENABLE_OFFSET = 0x01;
+static constexpr uint8_t BMI270_STEP_ENABLE_MASK = 0x10;
 static constexpr float WORLD_TILT_LIMIT_DEG = 10.0f;
 static constexpr float WORLD_TILT_INPUT_FULL_DEG = 10.0f; // device tilt that reaches full displayed +/-10 deg and starts runner slide
 static constexpr float TILT_ENGAGE_DEG = 3.0f;       // intentional left/right gesture starts here
@@ -162,6 +181,25 @@ static bool tiltGestureActive=false;
 static bool imuPlayPose=true;
 static float imuPrevTiltDeg=0.0f;
 static uint32_t imuLastReadMs=0;
+
+// Daily reference step count. The Bosch counter itself restarts with the sensor,
+// so SOUND TERRARIUM adds the current boot delta to a small persisted daily base.
+static bool stepCounterReady=false;
+static uint32_t stepRawOrigin=0;
+static uint32_t stepDiagLastMs=0;
+static constexpr uint32_t STEP_DIAG_MS=1000UL;
+static uint32_t stepPersistedBase=0;
+static uint32_t stepToday=0;
+static uint32_t stepLastReadMs=0;
+static uint32_t stepLastSaveMs=0;
+static uint32_t stepLastSavedValue=0;
+static int stepDateKey=0;
+static constexpr uint32_t STEP_READ_MS=500UL;
+static constexpr uint32_t STEP_SAVE_MS=5UL*60UL*1000UL;
+static constexpr uint32_t STEP_RESET_HOLD_MS=3000UL;
+static bool stepResetCHeld=false;
+static bool stepResetCFired=false;
+static uint32_t stepResetCPressedMs=0;
 static bool runnerLost=false;
 static int8_t runnerLostSide=0; // -1 = left edge, +1 = right edge
 static int8_t runnerLostTiltSign=0; // raw IMU sign at the instant the runner left
@@ -1193,14 +1231,17 @@ static void pollAdvCursorKeys(){
     // Cardputer ADV firmware: bit 7 = pressed, lower 7 bits = raw key value.
     bool pressed=(ev&0x80)!=0;
     uint8_t raw=(uint8_t)(ev&0x7F);
-    if(!pressed) continue;
 
     uint8_t row,col;
     mapTcaRawToPhysical(raw,row,col);
 
-    // While the setup portal is open, ANY physical key is an EXIT command.
+    // C key = physical row 3, col 3. Keep release events for the 3-second
+    // STEP reset gesture; all other key actions remain press-only.
+    const bool isC=(row==3 && col==5);
+
+    // While the setup portal is open, ANY physical key PRESS is an EXIT command.
     // Consume the key here so J/W/T/U/S do not also trigger their normal actions.
-    if(wifiSetupMode){
+    if(wifiSetupMode && pressed){
       Serial.println("[KEY] Wi-Fi SETUP -> EXIT");
       wifiSetupMode=false;
       wifiSetupServer.stop();
@@ -1212,6 +1253,21 @@ static void pollAdvCursorKeys(){
       lastWiFiRetryMs=0; // let loop start a non-blocking retry immediately
       continue;
     }
+
+    if(isC){
+      if(pressed){
+        stepResetCHeld=true;
+        stepResetCFired=false;
+        stepResetCPressedMs=millis();
+      }else{
+        stepResetCHeld=false;
+        stepResetCFired=false;
+        stepResetCPressedMs=0;
+      }
+      continue;
+    }
+
+    if(!pressed) continue;
 
     // Physical keys on Cardputer ADV (zero-based physical row/column):
     // ';' / UP marking = row 2, col 11
@@ -1248,6 +1304,12 @@ static void pollAdvCursorKeys(){
         startWiFiSetupPortalNonBlocking();
       }
     }
+  }
+
+  if(stepResetCHeld && !stepResetCFired &&
+     (uint32_t)(millis()-stepResetCPressedMs)>=STEP_RESET_HOLD_MS){
+    stepResetCFired=true;
+    resetStepCounterByUser();
   }
 
   // Clear key-event interrupt status after draining the FIFO.
@@ -1663,6 +1725,147 @@ void updateWorld(){
 
 
 // ---------------- ADV IMU / physical world ----------------
+static bool bmiWriteReg(uint8_t reg,uint8_t value){
+  Wire1.beginTransmission(BMI270_ADDR);
+  Wire1.write(reg);
+  Wire1.write(value);
+  return Wire1.endTransmission()==0;
+}
+
+static bool bmiReadRegs(uint8_t reg,uint8_t *dst,size_t len){
+  Wire1.beginTransmission(BMI270_ADDR);
+  Wire1.write(reg);
+  if(Wire1.endTransmission(false)!=0) return false;
+  if(Wire1.requestFrom((int)BMI270_ADDR,(int)len)!=(int)len) return false;
+  for(size_t i=0;i<len;i++) dst[i]=Wire1.read();
+  return true;
+}
+
+static bool bmiWriteRegs(uint8_t reg,const uint8_t *src,size_t len){
+  Wire1.beginTransmission(BMI270_ADDR);
+  Wire1.write(reg);
+  for(size_t i=0;i<len;i++) Wire1.write(src[i]);
+  return Wire1.endTransmission()==0;
+}
+
+static bool bmiConfigureAccelForStepCounter(){
+  // M5Unified uploads the Bosch feature configuration, but its BMI270 begin()
+  // does not explicitly program ACC_CONF/ACC_RANGE. Make the accelerometer
+  // configuration deterministic before enabling the pedometer feature.
+  bool ok=bmiWriteReg(BMI270_ACC_CONF_ADDR,BMI270_STEP_ACC_CONF);
+  if(ok) ok=bmiWriteReg(BMI270_ACC_RANGE_ADDR,BMI270_STEP_ACC_RANGE);
+  delay(5);
+  uint8_t conf=0,range=0;
+  if(ok) ok=bmiReadRegs(BMI270_ACC_CONF_ADDR,&conf,1);
+  if(ok) ok=bmiReadRegs(BMI270_ACC_RANGE_ADDR,&range,1);
+  Serial.printf("[STEP] ACC_CONF=0x%02X ACC_RANGE=0x%02X\n",conf,range);
+  return ok && conf==BMI270_STEP_ACC_CONF && (range&0x03)==BMI270_STEP_ACC_RANGE;
+}
+
+static bool bmiEnableBuiltInStepCounter(){
+  uint8_t page[16];
+  bool ok=bmiWriteReg(BMI270_FEAT_PAGE_REG,BMI270_STEP_CFG_PAGE);
+  if(ok) ok=bmiReadRegs(BMI270_FEATURES_REG,page,sizeof(page));
+  if(ok){
+    const uint8_t idx=BMI270_STEP_CFG_START+BMI270_STEP_ENABLE_OFFSET;
+    page[idx]|=BMI270_STEP_ENABLE_MASK;
+    ok=bmiWriteRegs(BMI270_FEATURES_REG,page,sizeof(page));
+  }
+  // Feature output lives on page 0. Always leave the selector there, including
+  // error paths, so later reads start from a known state.
+  bool restore=bmiWriteReg(BMI270_FEAT_PAGE_REG,0x00);
+  delay(2);
+  return ok && restore;
+}
+
+static bool bmiReadBuiltInStepCount(uint32_t &count){
+  uint8_t b[4];
+  if(!bmiWriteReg(BMI270_FEAT_PAGE_REG,0x00)) return false;
+  if(!bmiReadRegs(BMI270_FEATURES_REG,b,sizeof(b))) return false;
+  count=(uint32_t)b[0] |
+        ((uint32_t)b[1]<<8) |
+        ((uint32_t)b[2]<<16) |
+        ((uint32_t)b[3]<<24);
+  return true;
+}
+
+static void loadStepCounterState(){
+  stepDateKey=prefs.getInt("stepday",0);
+  stepPersistedBase=prefs.getUInt("steps",0);
+  stepToday=stepPersistedBase;
+  stepLastSavedValue=stepToday;
+  stepLastSaveMs=millis();
+}
+
+static void resetStepCounterByUser(){
+  if(!stepCounterReady){
+    Serial.println("[STEP] reset ignored: counter unavailable");
+    return;
+  }
+
+  uint32_t raw=0;
+  if(!bmiReadBuiltInStepCount(raw)){
+    Serial.println("[STEP] reset failed: raw counter read error");
+    return;
+  }
+
+  stepDateKey=localDateKey();
+  stepRawOrigin=raw;
+  stepPersistedBase=0;
+  stepToday=0;
+  stepLastSavedValue=0;
+  stepLastReadMs=millis();
+  stepLastSaveMs=stepLastReadMs;
+  prefs.putInt("stepday",stepDateKey);
+  prefs.putUInt("steps",0);
+  Serial.println("[STEP] reset by C hold");
+}
+
+static void serviceStepCounter(){
+  if(!stepCounterReady) return;
+  const uint32_t nowMs=millis();
+  if(stepLastReadMs!=0 && (uint32_t)(nowMs-stepLastReadMs)<STEP_READ_MS) return;
+  stepLastReadMs=nowMs;
+
+  uint32_t raw=0;
+  if(!bmiReadBuiltInStepCount(raw)) return;
+
+  const int today=localDateKey();
+  if(stepDateKey==0){
+    stepDateKey=today;
+    stepPersistedBase=0;
+    stepRawOrigin=raw;
+    stepToday=0;
+    prefs.putInt("stepday",stepDateKey);
+    prefs.putUInt("steps",0);
+    stepLastSavedValue=0;
+    stepLastSaveMs=nowMs;
+  }else if(today!=stepDateKey){
+    // New local calendar day: start today's count from the current Bosch value.
+    stepDateKey=today;
+    stepPersistedBase=0;
+    stepRawOrigin=raw;
+    stepToday=0;
+    prefs.putInt("stepday",stepDateKey);
+    prefs.putUInt("steps",0);
+    stepLastSavedValue=0;
+    stepLastSaveMs=nowMs;
+  }else{
+    const uint32_t bootDelta=raw-stepRawOrigin; // unsigned subtraction also tolerates wrap
+    stepToday=stepPersistedBase+bootDelta;
+  }
+
+  // Reference counter only: save sparsely to limit NVS wear. At worst a sudden
+  // power loss can discard the few minutes since the previous save.
+  if(stepToday!=stepLastSavedValue &&
+     (stepLastSaveMs==0 || (uint32_t)(nowMs-stepLastSaveMs)>=STEP_SAVE_MS)){
+    prefs.putUInt("steps",stepToday);
+    prefs.putInt("stepday",stepDateKey);
+    stepLastSavedValue=stepToday;
+    stepLastSaveMs=nowMs;
+  }
+}
+
 static bool bmiReadAccelRaw(int16_t &ax,int16_t &ay,int16_t &az){
   Wire1.beginTransmission(BMI270_ADDR);
   Wire1.write(BMI270_ACC_X_LSB);
@@ -1687,6 +1890,19 @@ static bool initAdvImuOnce(){
   Wire1.end();
   Wire1.begin(ADV_I2C_SDA,ADV_I2C_SCL);
   delay(5);
+
+  if(ok){
+    const bool accelCfgOK=bmiConfigureAccelForStepCounter();
+    stepCounterReady=accelCfgOK && bmiEnableBuiltInStepCounter();
+    uint32_t raw=0;
+    if(stepCounterReady && bmiReadBuiltInStepCount(raw)){
+      stepRawOrigin=raw;
+      Serial.printf("[STEP] BMI270 counter ready raw=%lu\n",(unsigned long)raw);
+    }else{
+      stepCounterReady=false;
+      Serial.println("[STEP] BMI270 counter unavailable");
+    }
+  }
   return ok;
 }
 
@@ -2659,14 +2875,14 @@ void drawClockInfoOverlay(){
       fmtHM(sunsetMinutes,ss,sizeof(ss));
       snprintf(sunb,sizeof(sunb),"SUN  R%s S%s",sr,ss);
     }else{
-      snprintf(sunb,sizeof(sunb),"SUN  --:-- --:--");
+      snprintf(sunb,sizeof(sunb),"SUN  R--:-- S--:--");
     }
     if(lunarScheduleValid){
       fmtHM(moonriseMinutes,mr,sizeof(mr));
       fmtHM(moonsetMinutes,ms,sizeof(ms));
       snprintf(moonb,sizeof(moonb),"MOON R%s S%s",mr,ms);
     }else{
-      snprintf(moonb,sizeof(moonb),"MOON --:-- --:--");
+      snprintf(moonb,sizeof(moonb),"MOON R--:-- S--:--");
     }
 
     canvas.setFont(&fonts::Font0);
@@ -2675,10 +2891,8 @@ void drawClockInfoOverlay(){
     canvas.drawString(sunb,2,2);
     canvas.drawString(moonb,2,12);
 
-    // Avoid a temporary Arduino String allocation on every rendered frame.
-    char locLabel[33];
-    snprintf(locLabel,sizeof(locLabel),"%.32s",locationName.c_str());
-    canvas.setTextDatum(bottom_left);
+    // TIDE: two rows, aligned with the SUN/MOON time column.
+    char hi[8]="--:--",lo[8]="--:--";
     if(tide.valid){
       auto fmtTideTime=[](time_t epoch, char *dst, size_t n){
         time_t localEpoch=epoch + localUtcOffsetSeconds;
@@ -2686,20 +2900,45 @@ void drawClockInfoOverlay(){
         gmtime_r(&localEpoch,&tmv);
         snprintf(dst,n,"%02d:%02d",tmv.tm_hour,tmv.tm_min);
       };
-      char hi[8],lo[8],highb[20],lowb[20],trendb[12];
       fmtTideTime(tide.nextHighEpoch,hi,sizeof(hi));
       fmtTideTime(tide.nextLowEpoch,lo,sizeof(lo));
-      snprintf(highb,sizeof(highb),"HIGH %s",hi);
-      snprintf(lowb,sizeof(lowb),"LOW  %s",lo);
-      snprintf(trendb,sizeof(trendb),"TIDE %s",tide.rising?"UP":"DN");
-      canvas.drawString(highb,3,H-22);
-      canvas.drawString(lowb,3,H-12);
-      canvas.drawString(trendb,72,H-12);
-    }else{
-      canvas.drawString("HIGH --:--",3,H-22);
-      canvas.drawString("LOW  --:--",3,H-12);
-      canvas.drawString("TIDE --",72,H-12);
     }
+    char highb[8],lowb[8];
+    snprintf(highb,sizeof(highb),"H%s",hi);
+    snprintf(lowb,sizeof(lowb),"L%s",lo);
+    canvas.drawString(highb,32,22);
+    canvas.drawString(lowb,32,32);
+    canvas.drawString("TIDE",74,22);
+
+    if(tide.valid){
+      const int ax=102;
+      if(tide.rising){
+        canvas.drawLine(ax,29,ax,24,ink);
+        canvas.drawLine(ax,24,ax-2,26,ink);
+        canvas.drawLine(ax,24,ax+2,26,ink);
+      }else{
+        canvas.drawLine(ax,24,ax,29,ink);
+        canvas.drawLine(ax,29,ax-2,27,ink);
+        canvas.drawLine(ax,29,ax+2,27,ink);
+      }
+    }
+
+    // Three stacked blue tide waves: single 1 px strokes, small amplitude.
+    const uint16_t tideBlue=canvas.color565(0,120,255);
+    for(int row=0; row<3; ++row){
+      const int baseY=23+row*3;
+      for(int w=0; w<3; ++w){
+        const int x0=2+w*9;
+        canvas.drawLine(x0,baseY+2,x0+2,baseY,tideBlue);
+        canvas.drawLine(x0+2,baseY,x0+4,baseY+2,tideBlue);
+        canvas.drawLine(x0+4,baseY+2,x0+6,baseY,tideBlue);
+      }
+    }
+
+    // LOCATION remains at bottom-left.
+    char locLabel[33];
+    snprintf(locLabel,sizeof(locLabel),"%.32s",locationName.c_str());
+    canvas.setTextDatum(bottom_left);
     canvas.drawString(locLabel,3,H-2);
 
     // Detailed weather information belongs to I (auxiliary information).
@@ -2714,7 +2953,7 @@ void drawClockInfoOverlay(){
   }
 
   if(showClockInfo){
-    char tb[16],db[24],tempb[20],humb[16],pressb[20],popb[16];
+    char tb[16],db[24],tempb[20],humb[16];
     static const char* WDAYS[7]={"SUN","MON","TUE","WED","THU","FRI","SAT"};
     strftime(tb,sizeof(tb),"%H:%M",&t);
     snprintf(db,sizeof(db),"%04d.%02d.%02d %s",
@@ -2724,10 +2963,6 @@ void drawClockInfoOverlay(){
     else snprintf(tempb,sizeof(tempb),"TEMP --.-C");
     if(weather.humidityPct>=0) snprintf(humb,sizeof(humb),"HUM  %d%%",weather.humidityPct);
     else snprintf(humb,sizeof(humb),"HUM  --%%");
-    if(isfinite(weather.pressureMslHpa)) snprintf(pressb,sizeof(pressb),"PRES %.0fhPa",weather.pressureMslHpa);
-    else snprintf(pressb,sizeof(pressb),"PRES ----hPa");
-    if(weather.precipitationProbabilityPct>=0) snprintf(popb,sizeof(popb),"RAIN %d%%",weather.precipitationProbabilityPct);
-    else snprintf(popb,sizeof(popb),"RAIN --%%");
 
     // v108: right = current atmosphere.
     canvas.setFont(&fonts::Font0);
@@ -2735,6 +2970,13 @@ void drawClockInfoOverlay(){
     canvas.setTextDatum(top_left);
     canvas.drawString(tempb,174,2);
     canvas.drawString(humb,174,12);
+
+    // STEP: T-linked at bottom-right. 'S' begins exactly at EQ_GEN_LEFT.
+    char stepb[24];
+    if(stepCounterReady) snprintf(stepb,sizeof(stepb),"STEP %lu",(unsigned long)stepToday);
+    else snprintf(stepb,sizeof(stepb),"STEP ----");
+    canvas.setTextDatum(bottom_left);
+    canvas.drawString(stepb,EQ_GEN_LEFT,H-2);
 
     // Central information block.
     // M5GFX ships FreeSansBold at 9/12/18/24pt, so use its float text scaling
@@ -3523,7 +3765,7 @@ static void servicePendingWiFiSetup(){
 void setup(){
   Serial.begin(115200);
   delay(200);
-  Serial.println("\n[BOOT] SOUND TERRARIUM v108am tide vertical layout");
+  Serial.println("\n[BOOT] SOUND TERRARIUM v108as step accel-config fix STEP DIAGNOSTIC step info layout");
   delay(100);
 
   // Initialize only the LCD; do not globally initialize M5Unified/Cardputer.
@@ -3552,6 +3794,7 @@ void setup(){
   if(saved>1704067200) fallbackEpoch=(time_t)saved;
   fallbackMillis0=millis();
   loadSavedWeather();
+  loadStepCounterState();
 
   // Initialize only the ADV keyboard controller on the already-active Wire1 bus.
   // This does not call M5Cardputer.begin() and does not touch I2S0.
@@ -3585,7 +3828,7 @@ void drawNetworkStatusBox(){
   localNow(st);
   uint16_t groundInk=readableInkForSky(skyColorForTime(st));
   canvas.setTextColor(groundInk);
-  canvas.setTextDatum(bottom_right);
+  canvas.setTextDatum(bottom_left);
 
   // Avoid allocating a temporary String on every rendered frame.
   static char line[48]="WiFi SETUP";
@@ -3603,7 +3846,7 @@ void drawNetworkStatusBox(){
       snprintf(line,sizeof(line),"WiFi SETUP");
     }
   }
-  canvas.drawString(line,W-3,H-2);
+  canvas.drawString(line,3,H-12);
   canvas.setTextDatum(top_left);
 }
 
@@ -3624,6 +3867,7 @@ void loop(){
   servicePendingWiFiSetup();
   serviceWiFiRetryNonBlocking();
   updateAdvImu();
+  serviceStepCounter();
   updateOffscreenRunnerRescue();
   if(wifiSetupMode) wifiSetupServer.handleClient();
   // Keep network services alive after reset or a temporary Wi-Fi drop.
