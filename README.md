@@ -431,9 +431,13 @@ includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
 with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
 saved Wi-Fi reconnection, and the temperature-responsive runner.
 
-Submission to M5Burner and automatic mirroring to the M5Launcher OTA catalog
-are not yet complete. Catalog availability should be treated as pending until
-the entry can be found there.
+**SOUND TERRARIUM v108br is now published on M5Burner** for the Cardputer and
+can be found by searching for `SOUND TERRARIUM`. Its M5Burner merged firmware
+image has been flashed and tested successfully on a real Cardputer ADV.
+
+Automatic mirroring from M5Burner to the M5Launcher OTA catalog may take a few
+hours. Until the entry appears in M5Launcher, use M5Burner or install
+`SoundTerrarium.ino.bin` from the latest GitHub Release with M5Launcher.
 
 ### Arduino IDE / source code
 
