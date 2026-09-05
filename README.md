@@ -127,6 +127,34 @@ When an Internet connection is available, SOUND TERRARIUM uses
 weather. **TEMP** (temperature in °C) and **HUM** (relative humidity in %)
 are part of the **I (Information)** display.
 
+### Runner temperature colors
+
+The runner's white pixels respond to the configured location's current
+temperature in both the device and Web versions. Existing orange/blue accent
+pixels stay unchanged, in every pose including UFO capture.
+The outline becomes white only while the body is blue (−20°C or below) at
+local night, using the existing sunrise/sunset day/night schedule. Otherwise
+the outline stays black, including when offline or after a failed weather request.
+
+| Current temperature | White body pixels become |
+| --- | --- |
+| 38°C or above | Red |
+| 36°C to below 38°C | Orange |
+| Above −10°C and below 36°C | White (normal) |
+| Above −20°C up to −10°C | Light blue |
+| −20°C or below | Blue |
+
+Weather is normally requested every 30 minutes; a new temperature is reflected
+on the next frame. This works independently of the T/I information overlays.
+While offline, before a valid online temperature is received, or after a failed
+weather request, the body returns to white (the original accent colors remain).
+Cached weather from a previous boot does not activate the tint. After reconnection,
+tint resumes only after a successful weather request: the device retries using
+its existing one-minute retry limit, while the Web version keeps its 30-minute
+schedule (changing location or reloading also requests weather).
+These thresholds are visual effects, not medical warnings or equivalent hot/cold
+danger levels.
+
 More detailed environmental information is treated as auxiliary data:
 **PRES** (mean sea-level pressure), **RAIN** (hourly precipitation probability
 provided by Open-Meteo for the configured location), **TEMP/HUM**, daily

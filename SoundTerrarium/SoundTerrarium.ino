@@ -560,10 +560,24 @@ float worldAdvancePixels(){
   return 1.0f;
 }
 
+// Tint only white sprite pixels; saved/offline weather never activates tint.
+uint16_t runnerTemperatureColor(){
+  if(WiFi.status()!=WL_CONNECTED || !weather.online || !weatherOK ||
+     !isfinite(weather.temperatureC)) return TFT_WHITE;
+  const float t=weather.temperatureC;
+  if(t>=38.0f) return 0xF800; // red
+  if(t>=36.0f) return 0xFC00; // orange (#ff8000)
+  if(t<=-20.0f) return 0x001F; // blue
+  if(t<=-10.0f) return 0x867F; // light blue (#80ccff)
+  return TFT_WHITE;
+}
+
+bool runnerIsLocalNight();
+
 void drawSprite(const char* const rows[11], int x, int y){
-  // First pass: 1-pixel black silhouette around every opaque sprite pixel.
-  // This is the same visual principle as the HTML version and keeps the
-  // character readable over white sky, clouds, and bright EQ terrain.
+  const uint16_t bodyColor=runnerTemperatureColor();
+  const uint16_t outlineColor=(bodyColor==0x001F && runnerIsLocalNight()) ? TFT_WHITE : TFT_BLACK;
+  // White outline only for the blue temperature tint at local night.
   for(int yy=0; yy<11; ++yy){
     for(int xx=0; xx<10; ++xx){
       char c = rows[yy][xx];
@@ -571,7 +585,7 @@ void drawSprite(const char* const rows[11], int x, int y){
       for(int oy=-1; oy<=1; ++oy){
         for(int ox=-1; ox<=1; ++ox){
           if(ox==0 && oy==0) continue;
-          canvas.drawPixel(x+xx+ox,y+yy+oy,TFT_BLACK);
+          canvas.drawPixel(x+xx+ox,y+yy+oy,outlineColor);
         }
       }
     }
@@ -582,7 +596,7 @@ void drawSprite(const char* const rows[11], int x, int y){
     for(int xx=0; xx<10; ++xx){
       char c = rows[yy][xx];
       if(c=='.' || c=='\0') continue;
-      uint16_t col = TFT_WHITE;
+      uint16_t col = bodyColor;
       if(c=='o') col = 0xFA20;
       else if(c=='b') col = 0x1C9F;
       canvas.drawPixel(x+xx,y+yy,col);
@@ -672,6 +686,12 @@ static bool isSolarDayMinute(int m){
 }
 
 // ---------------- Weather ----------------
+bool runnerIsLocalNight(){
+  struct tm t;
+  localNow(t);
+  return !isSolarDayMinute(minuteOfDay(t));
+}
+
 WeatherMode modeFromWMO(int code){
   if(code==0) return WX_CLEAR;
   if(code>=1 && code<=3) return WX_CLOUDY;
@@ -934,7 +954,7 @@ void fetchWeather(){
   weather.code=current["weather_code"].as<int>();
   weather.cloud=current["cloud_cover"] | 0;
   weather.cloud=clampi(weather.cloud,0,100);
-  if(!current["temperature_2m"].isNull()) weather.temperatureC=current["temperature_2m"].as<float>();
+  weather.temperatureC=current["temperature_2m"].isNull() ? NAN : current["temperature_2m"].as<float>();
   if(!current["relative_humidity_2m"].isNull()) weather.humidityPct=clampi(current["relative_humidity_2m"].as<int>(),0,100);
   if(!current["pressure_msl"].isNull()) weather.pressureMslHpa=current["pressure_msl"].as<float>();
   JsonArray popArr=doc["hourly"]["precipitation_probability"].as<JsonArray>();
@@ -3768,6 +3788,9 @@ void loop(){
     }
   }else{
     wifiOK=false;
+
+    weather.online=false; // Do not tint from cached weather after disconnection.
+    weatherOK=false;      // Refresh after reconnect (existing retry limit applies).
 
     // Do not leave the clock permanently on stale fallback time.
     // Retry saved Wi-Fi periodically when not actively using the setup portal.
