@@ -421,16 +421,42 @@ Open-Meteo is used for weather and astronomical schedule data, and the Open-Mete
 
 ## Installation
 
-> **This section will be finalized after the current Cardputer ADV build
-> has completed its stability testing.**
+Choose the method that fits how you want to use SOUND TERRARIUM.
 
-The current development build is an Arduino `.ino` sketch targeting
-**M5Cardputer**.
+### M5Launcher / precompiled firmware
 
-Before publishing a release, the exact tested Arduino IDE, M5Stack board
-package, and library versions will be documented here so that the
-installation procedure reflects the actual release environment rather
-than an assumed configuration.
+For users who do not want to compile the sketch, the latest GitHub Release
+includes `SoundTerrarium.ino.bin`, a precompiled firmware image for the
+**M5Stack Cardputer ADV**. It has been installed and tested on real hardware
+with **M5Launcher 2.9.1**, including launch, microphone input, Wi-Fi setup,
+saved Wi-Fi reconnection, and the temperature-responsive runner.
+
+Submission to M5Burner and automatic mirroring to the M5Launcher OTA catalog
+are not yet complete. Catalog availability should be treated as pending until
+the entry can be found there.
+
+### Arduino IDE / source code
+
+For manual installation, development, or modification:
+
+1. Download or clone this repository.
+2. Open `SoundTerrarium/SoundTerrarium.ino` in Arduino IDE.
+3. Select the Cardputer board configuration and compile/upload the sketch to a
+   **M5Stack Cardputer ADV**.
+
+The Arduino and ESP32 components used by the sketch are listed in the
+[Software / services](#software--services) section above. Exact dependency
+versions are not currently pinned; use the precompiled release when you want
+the tested build without recreating the development environment.
+
+The `.ino` file is the editable source code. The `.bin` file is the compiled
+firmware for users installing through M5Launcher; they are two installation
+routes for the same regular build.
+
+### No-device option
+
+The browser version requires no Cardputer or firmware installation:
+[open SOUND TERRARIUM Web](https://kariagepompadour.github.io/SOUND-TERRARIUM-Web/).
 
 ------------------------------------------------------------------------
 
